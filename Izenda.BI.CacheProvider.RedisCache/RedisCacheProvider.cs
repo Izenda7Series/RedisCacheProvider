@@ -3,6 +3,7 @@ using Izenda.BI.CacheProvider.RedisCache.Converters;
 using Izenda.BI.CacheProvider.RedisCache.Extensions;
 using Izenda.BI.CacheProvider.RedisCache.Resolvers;
 using Izenda.BI.Framework.Models.ReportDesigner;
+using log4net;
 using Newtonsoft.Json;
 using StackExchange.Redis;
 using System;
@@ -17,7 +18,7 @@ namespace Izenda.BI.CacheProvider.RedisCache
     /// <summary>
     /// Redis cache provider
     /// </summary>
-#warning The current version of this project will only work with Izenda versions 2.4.4+
+    #warning The current version of this project will only work with Izenda versions 2.4.4+
     [Export(typeof(ICacheProvider))]
     public class RedisCacheProvider : ICacheProvider, IDisposable
     {
@@ -25,6 +26,7 @@ namespace Izenda.BI.CacheProvider.RedisCache
         private bool _enableValueCompression = true;
         private JsonSerializer _serializer;
         private JsonSerializerSettings _serializerSettings = new JsonSerializerSettings();
+        private static readonly ILog logger = LogManager.GetLogger("RedisCacheLogger");
         private readonly IDatabase _cache;
         private readonly IServer _server;
 
@@ -110,14 +112,17 @@ namespace Izenda.BI.CacheProvider.RedisCache
         /// <param name="value"> The value </param>
         public void Add<T>(string key, T value)
         {
-            try
+            this.ExecuteWithStopwatch(() =>
             {
-                _cache.StringSet(key, Serialize(value));
-            }
-            catch (Exception ex)
-            {
-                Trace.Write(string.Format(AppConstants.ExceptionTemplate, ex.ToString()));
-            }
+                try
+                {
+                    _cache.StringSet(key, Serialize(value));
+                }
+                catch (Exception ex)
+                {
+                    Trace.Write(string.Format(AppConstants.ExceptionTemplate, ex.ToString()));
+                }
+            }, key, "Add");
         }
 
         /// <summary>
@@ -127,15 +132,18 @@ namespace Izenda.BI.CacheProvider.RedisCache
         /// <param name="value"> The value</param>
         /// <param name="expiration"> The expiration </param>
         public void AddWithExactLifetime(string key, object value, TimeSpan expiration)
-        {  
-            try
+        {
+            this.ExecuteWithStopwatch(() =>
             {
-                _cache.StringSet(key, Serialize(value), expiration);
-            }
-            catch (Exception ex)
-            {
-                Trace.Write(string.Format(AppConstants.ExceptionTemplate, ex.ToString()));
-            }
+                try
+                {
+                    _cache.StringSet(key, Serialize(value), expiration);
+                }
+                catch (Exception ex)
+                {
+                    Trace.Write(string.Format(AppConstants.ExceptionTemplate, ex.ToString()));
+                }
+            }, key, "AddWithExactLifetime");
         }
 
         /// <summary>
@@ -156,7 +164,10 @@ namespace Izenda.BI.CacheProvider.RedisCache
         /// <returns>true if the cache contains the key, false otherwise</returns>
         public bool Contains(string key)
         {
-            return _cache.KeyExists(key);
+            return this.ExecuteWithStopwatch(() =>
+            {
+                return _cache.KeyExists(key);
+            }, key, "Contains");
         }
 
         /// <summary>
@@ -166,12 +177,15 @@ namespace Izenda.BI.CacheProvider.RedisCache
         /// <param name="key">The key</param>
         /// <returns></returns>
         public T Get<T>(string key)
-        {            
-            var result = _cache.StringGet(key);
-            if (result.IsNullOrEmpty)
-                return default(T);
+        {
+            return this.ExecuteWithStopwatch(() =>
+            {
+                var result = _cache.StringGet(key);
+                if (result.IsNullOrEmpty)
+                    return default(T);
 
-            return Deserialize<T>(result);
+                return Deserialize<T>(result);
+            }, key, "Get");
         }
 
         /// <summary>
@@ -180,14 +194,17 @@ namespace Izenda.BI.CacheProvider.RedisCache
         /// <param name="key">The key</param>
         public void Remove(string key)
         {
-            try
+            this.ExecuteWithStopwatch(() =>
             {
-                _cache.KeyDelete(key);
-            }
-            catch (Exception ex)
-            {
-                Trace.Write(string.Format(AppConstants.ExceptionTemplate, ex.ToString()));
-            }
+                try
+                {
+                    _cache.KeyDelete(key);
+                }
+                catch (Exception ex)
+                {
+                    Trace.Write(string.Format(AppConstants.ExceptionTemplate, ex.ToString()));
+                }
+            }, key, "Remove");
         }
 
         /// <summary>
@@ -196,19 +213,22 @@ namespace Izenda.BI.CacheProvider.RedisCache
         /// <param name="pattern">The pattern. </param>
         public void RemoveKeyWithPattern(string pattern)
         {
-            var keysToRemove = _server.Keys(_cache.Database, pattern + "*").ToArray();
+            this.ExecuteWithStopwatch(() =>
+            {
+                var keysToRemove = _server.Keys(_cache.Database, pattern + "*").ToArray();
 
-            try
-            {
-                foreach (var key in keysToRemove)
+                try
                 {
-                    _cache.KeyDelete(key);
+                    foreach (var key in keysToRemove)
+                    {
+                        _cache.KeyDelete(key);
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                Trace.Write(string.Format(AppConstants.ExceptionTemplate, ex.ToString()));
-            }
+                catch (Exception ex)
+                {
+                    Trace.Write(string.Format(AppConstants.ExceptionTemplate, ex.ToString()));
+                }
+            }, pattern, "RemoveKeyWithPattern");
         }
 
         /// <summary>
@@ -261,21 +281,24 @@ namespace Izenda.BI.CacheProvider.RedisCache
         /// <param name="executor">The function call that returns the data.</param>
         public T UpdateWithSlidingLifetime<T>(string key, TimeSpan expiration, Func<T> executor)
         {
-            var newValue = executor();
+            return this.ExecuteWithStopwatch(() =>
+            {
+                var newValue = executor();
 
-            try
-            {
-                if (newValue != null)
+                try
                 {
-                    _cache.StringSet(key, Serialize(newValue), expiration);
+                    if (newValue != null)
+                    {
+                        _cache.StringSet(key, Serialize(newValue), expiration);
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                Trace.Write(string.Format(AppConstants.ExceptionTemplate, ex.ToString()));
-            }
- 
-            return newValue;
+                catch (Exception ex)
+                {
+                    Trace.Write(string.Format(AppConstants.ExceptionTemplate, ex.ToString()));
+                }
+
+                return newValue;
+            }, key, "UpdateWithSlidingLifetime");
         }
 
         /// <summary>
@@ -287,33 +310,102 @@ namespace Izenda.BI.CacheProvider.RedisCache
         /// <param name="expiration">The expiration timeout as a timespan.</param>
         private T EnsureCache<T>(Func<T> executor, string key, TimeSpan expiration, Action<string, T, TimeSpan> addItemToCache)
         {
-            var result = Get<T>(key);
+            return this.ExecuteWithStopwatch(() =>
+            {
+                var result = Get<T>(key);
 
-            if (EqualityComparer<T>.Default.Equals(result, default(T)))
-            {               
-                try
+                if (EqualityComparer<T>.Default.Equals(result, default(T)))
                 {
-                    result = Get<T>(key);
-
-                    if (EqualityComparer<T>.Default.Equals(result, default(T)))
+                    try
                     {
-                        var newValue = executor();
+                        result = Get<T>(key);
 
-                        result = newValue;
+                        if (EqualityComparer<T>.Default.Equals(result, default(T)))
+                        {
+                            var newValue = executor();
+
+                            result = newValue;
+                        }
+
+                        if (result != null)
+                        {
+                            addItemToCache(key, result, expiration);
+                        }
                     }
-
-                    if (result != null)
+                    catch (Exception ex)
                     {
-                        addItemToCache(key, result, expiration);
+                        Trace.Write(string.Format(AppConstants.ExceptionTemplate, ex.ToString()));
                     }
                 }
-                catch (Exception ex)
-                {
-                    Trace.Write(string.Format(AppConstants.ExceptionTemplate, ex.ToString()));
-                }
+
+                return result;
+            }, key, "EnsureCache");
+        }
+
+        private TResult ExecuteWithStopwatch<TResult>(Func<TResult> function, string key, string methodName)
+        {
+            var stopwatch = new Stopwatch();
+            stopwatch.Start();
+
+            try
+            {
+                return function();
             }
+            catch (Exception ex)
+            {
+                logger.Error(new
+                {
+                    TotalTime = $"{stopwatch.ElapsedMilliseconds} ms",
+                    Key = key,
+                    Method = methodName,
+                    Exception = ex
+                });
 
-            return result;
+                throw;
+            }
+            finally
+            {
+                stopwatch.Stop();
+                logger.Info(new
+                {
+                    TotalTime = $"{stopwatch.ElapsedMilliseconds} ms",
+                    Key = key,
+                    Method = methodName
+                });
+            }
+        }
+
+        private void ExecuteWithStopwatch(Action function, string key, string methodName)
+        {
+            var stopwatch = new Stopwatch();
+            stopwatch.Start();
+
+            try
+            {
+                function();
+            }
+            catch (Exception ex)
+            {
+                logger.Error(new
+                {
+                    TotalTime = $"{stopwatch.ElapsedMilliseconds} ms",
+                    Key = key,
+                    Method = methodName, 
+                    Exception = ex
+                });
+
+                throw;
+            }
+            finally
+            {
+                stopwatch.Stop();
+                logger.Info(new
+                {
+                    TotalTime = $"{stopwatch.ElapsedMilliseconds} ms",
+                    Key = key,
+                    Method = methodName
+                });
+            }
         }
 
         /// <summary>
