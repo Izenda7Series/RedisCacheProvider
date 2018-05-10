@@ -180,14 +180,7 @@ namespace Izenda.BI.CacheProvider.RedisCache
         /// <param name="key">The key</param>
         public void Remove(string key)
         {
-            try
-            {
-                _cache.KeyDelete(key);
-            }
-            catch (Exception ex)
-            {
-                Trace.Write(string.Format(AppConstants.ExceptionTemplate, ex.ToString()));
-            }
+            RemoveKeyWithPattern(key);
         }
 
         /// <summary>
@@ -196,6 +189,7 @@ namespace Izenda.BI.CacheProvider.RedisCache
         /// <param name="pattern">The pattern. </param>
         public void RemoveKeyWithPattern(string pattern)
         {
+            pattern = pattern.StartsWith("ReportCacheKey") ? "_Report_Report_" : pattern;
             var keysToRemove = _server.Keys(_cache.Database, pattern + "*").ToArray();
 
             try
@@ -235,6 +229,11 @@ namespace Izenda.BI.CacheProvider.RedisCache
         /// <param name="executor">The function call that returns the data.</param>
         public T EnsureWithExactLifetime<T>(string key, TimeSpan expiration, Func<T> executor)
         {
+            if (key.Contains("_Report_Report_"))
+            {
+                expiration = TimeSpan.FromSeconds(1000);
+            }
+
             return EnsureCache(executor, key, expiration, (cacheKey, result, expirationTime) =>
             {
                 AddWithExactLifetime(cacheKey, result, expirationTime);
