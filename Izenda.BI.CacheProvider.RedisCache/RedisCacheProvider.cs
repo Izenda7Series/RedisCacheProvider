@@ -17,7 +17,6 @@ namespace Izenda.BI.CacheProvider.RedisCache
     /// <summary>
     /// Redis cache provider
     /// </summary>
-#warning The current version of this project will only work with Izenda versions 2.4.4+
     [Export(typeof(ICacheProvider))]
     public class RedisCacheProvider : ICacheProvider, IDisposable
     {
@@ -50,7 +49,6 @@ namespace Izenda.BI.CacheProvider.RedisCache
             resolver.Ignore(typeof(ReportPartDefinition), "ReportPartContent");
 
             _serializerSettings.ReferenceLoopHandling = ReferenceLoopHandling.Ignore;
-            _serializerSettings.TypeNameHandling = TypeNameHandling.Objects;
             _serializerSettings.TypeNameAssemblyFormat = System.Runtime.Serialization.Formatters.FormatterAssemblyStyle.Simple;
             _serializerSettings.ObjectCreationHandling = ObjectCreationHandling.Replace;
 
@@ -64,9 +62,11 @@ namespace Izenda.BI.CacheProvider.RedisCache
         /// Serializes the obj to json
         /// </summary>
         /// <param name="obj"></param>
+        /// <param name="nameHandling">The type name handling.</param>
         /// <returns> A json string of the object</returns>
-        private string Serialize(object obj)
+        private string Serialize(object obj, TypeNameHandling nameHandling)
         {
+            _serializerSettings.TypeNameHandling = nameHandling;
             string value = JsonConvert.SerializeObject(obj, _serializerSettings);
 
             if (_enableValueCompression)
@@ -82,8 +82,9 @@ namespace Izenda.BI.CacheProvider.RedisCache
         /// </summary>
         /// <typeparam name="T">The object type</typeparam>
         /// <param name="serialized">The serialized object</param>
+        /// <param name="nameHandling">The type name handling.</param>
         /// <returns>THe deserialized object</returns>
-        private T Deserialize<T>(string serialized)
+        private T Deserialize<T>(string serialized, TypeNameHandling nameHandling)
         {
             if (_enableValueCompression)
             {
@@ -92,6 +93,7 @@ namespace Izenda.BI.CacheProvider.RedisCache
                 {
                     try
                     {
+                        _serializer.TypeNameHandling = nameHandling;
                         return _serializer.Deserialize<T>(reader);
                     }
                     catch (Exception ex)
@@ -101,6 +103,7 @@ namespace Izenda.BI.CacheProvider.RedisCache
                 }
             }
 
+            _serializerSettings.TypeNameHandling = nameHandling;
             return JsonConvert.DeserializeObject<T>(serialized, _serializerSettings);
         }
 
@@ -113,7 +116,8 @@ namespace Izenda.BI.CacheProvider.RedisCache
         {
             try
             {
-                _cache.StringSet(key, Serialize(value));
+                var typeNameHandling = key.StartsWith("DC_") ? TypeNameHandling.None : TypeNameHandling.Objects;
+                _cache.StringSet(key, Serialize(value, typeNameHandling));
             }
             catch (Exception ex)
             {
@@ -131,7 +135,8 @@ namespace Izenda.BI.CacheProvider.RedisCache
         {  
             try
             {
-                _cache.StringSet(key, Serialize(value), expiration);
+                var typeNameHandling = key.StartsWith("DC_") ? TypeNameHandling.None : TypeNameHandling.Objects;
+                _cache.StringSet(key, Serialize(value, typeNameHandling), expiration);
             }
             catch (Exception ex)
             {
@@ -172,7 +177,8 @@ namespace Izenda.BI.CacheProvider.RedisCache
             if (result.IsNullOrEmpty)
                 return default(T);
 
-            return Deserialize<T>(result);
+            var typeNameHandling = key.StartsWith("DC_") ? TypeNameHandling.None : TypeNameHandling.Objects;
+            return Deserialize<T>(result, typeNameHandling);
         }
 
         /// <summary>
@@ -268,7 +274,8 @@ namespace Izenda.BI.CacheProvider.RedisCache
             {
                 if (newValue != null)
                 {
-                    _cache.StringSet(key, Serialize(newValue), expiration);
+                    var typeNameHandling = key.StartsWith("DC_") ? TypeNameHandling.None : TypeNameHandling.Objects;
+                    _cache.StringSet(key, Serialize(newValue, typeNameHandling), expiration);
                 }
             }
             catch (Exception ex)
