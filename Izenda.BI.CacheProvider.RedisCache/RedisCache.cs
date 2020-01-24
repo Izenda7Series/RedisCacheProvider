@@ -32,6 +32,19 @@ namespace Izenda.BI.CacheProvider.RedisCache
         }
 
         /// <summary>
+        /// Initializes a new instance of the <see cref="RedisCache"/> class
+        /// </summary>
+        /// <param name="cache">The redis database cache</param>
+        /// <param name="serializerSettings">The serializer settings</param>
+        public RedisCache(IDatabase cache, JsonSerializerSettings serializerSettings)
+        {
+            this.cache = cache;
+            this.serializerSettings = serializerSettings;
+            serializer = JsonSerializer.Create(serializerSettings);
+            logger = LogManager.GetLogger(this.GetType());
+        }
+
+        /// <summary>
         /// Gets the key's value
         /// </summary>
         /// <typeparam name="T">The type of the value</typeparam>
