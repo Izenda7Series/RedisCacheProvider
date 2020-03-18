@@ -32,7 +32,22 @@ namespace Izenda.BI.CacheProvider.RedisCache
             });
         }
 
-        public RedisCacheProvider(StackExchange.Redis.IDatabase cache) { }
+        /// <summary>
+        /// Initializes a new instance of the <see cref="RedisCacheProvider"/> class
+        /// </summary>
+        /// <param name="cache">The redis database cache</param>
+        public RedisCacheProvider(StackExchange.Redis.IDatabase cache)
+        {
+            RedisCache = new RedisCache(cache, new JsonSerializerSettings
+            {
+                DateTimeZoneHandling = DateTimeZoneHandling.Unspecified,
+                NullValueHandling = NullValueHandling.Ignore,
+                ObjectCreationHandling = ObjectCreationHandling.Replace,
+                ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+                TypeNameHandling = TypeNameHandling.Objects,
+                Converters = new List<JsonConverter> { new ReportPartContentConverter(), new DBServerTypeSupportingConverter() }
+            });
+        }
 
         /// <summary>
         /// Adds an item to the cache using the specified key
